@@ -39,6 +39,19 @@ const MapUpdater = ({ center, zoom }) => {
 
 const UNIT_LOCATION = { lat: 22.5726, lng: 88.3639 }; 
 
+const isCoordLike = (s) => typeof s === 'string' && (s.includes('°') || s.includes('±') || /^\s*-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?\s*$/.test(s));
+const reverseGeocodeAddress = async (lat, lng) => {
+  try {
+    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&addressdetails=1&lat=${lat}&lon=${lng}`,
+      { headers: { 'User-Agent': 'NyayakApp/1.0', 'Accept-Language': 'en-IN, bn-IN;q=0.8, en;q=0.6' } });
+    const data = await res.json();
+    return data?.display_name || '';
+  } catch (e) {
+    console.warn('Reverse geocoding failed:', e);
+    return '';
+  }
+};
+
 const PoliceDashboard = () => {
   const navigate = useNavigate();
   const [incidents, setIncidents] = useState([]);
@@ -62,10 +75,24 @@ const PoliceDashboard = () => {
 
     const channel = supabase
       .channel('police_dashboard_map')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'emergencies' }, (payload) => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'emergencies' }, async (payload) => {
         fetchLiveIncidents();
         if (payload.eventType === 'INSERT') {
            toast.error(`🚨 NEW SOS: ${payload.new.topic || payload.new.type}`, { position: "top-right", theme: "colored", icon: <Siren className="animate-pulse" /> });
+           const lat = Number(payload.new.location_lat);
+           const lng = Number(payload.new.location_lng);
+           if (!isNaN(lat) && !isNaN(lng)) {
+             let addr = payload.new.location_address;
+             if (!addr || isCoordLike(addr)) {
+               addr = await reverseGeocodeAddress(lat, lng);
+               try { await supabase.from('emergencies').update({ location_address: addr }).eq('id', payload.new.id); } catch {}
+             }
+             const enriched = { ...payload.new, location_address: addr };
+             setSelectedIncident(enriched);
+             setMapCenter([lat, lng]);
+             setZoomLevel(15);
+             setIsResponding(payload.new.status === 'dispatching');
+           }
         }
       })
       .subscribe();
@@ -73,12 +100,20 @@ const PoliceDashboard = () => {
     return () => { supabase.removeChannel(channel); };
   }, []);
 
-  // --- HANDLERS ---
-  const handleSelect = (incident) => {
+  const handleSelect = async (incident) => {
     setSelectedIncident(incident);
     setMapCenter([incident.location_lat, incident.location_lng]);
     setZoomLevel(15);
     setIsResponding(incident.status === 'dispatching');
+
+    // Ensure detailed address is shown
+    if (!incident.location_address || isCoordLike(incident.location_address)) {
+      const addr = await reverseGeocodeAddress(incident.location_lat, incident.location_lng);
+      if (addr) {
+        setSelectedIncident(prev => prev ? { ...prev, location_address: addr } : { ...incident, location_address: addr });
+        try { await supabase.from('emergencies').update({ location_address: addr }).eq('id', incident.id); } catch {}
+      }
+    }
   };
 
   const handleRespond = async () => {
@@ -168,7 +203,7 @@ const PoliceDashboard = () => {
                 incidents.map((incident) => (
                   <div key={incident.id} onClick={() => handleSelect(incident)} className="p-4 rounded-xl border border-slate-200 bg-white hover:border-blue-300 hover:shadow-md transition-all cursor-pointer group">
                     <div className="flex justify-between items-start mb-2">
-                       <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded border ${incident.priority === 'critical' ? 'bg-red-50 text-red-700 border-red-100' : 'bg-orange-50 text-orange-700 border-orange-100'}`}>{incident.priority}</span>
+                       <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded border ${incident.priority === 'critical' ? 'bg-red-50 text-red-700 border-red-100' : 'bg-orange-500 text-orange-700 border-orange-100'}`}>{incident.priority}</span>
                        <span className="text-xs text-slate-400">{new Date(incident.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
                     </div>
                     <h3 className="text-sm font-bold text-slate-800 group-hover:text-blue-600 transition-colors">{incident.topic || incident.type}</h3>

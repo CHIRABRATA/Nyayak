@@ -1,5 +1,6 @@
 import React from 'react';
 import { useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import HeroSection from '../components/heroSection';
 import LegalBentoGrid from '../components/LegalBentoGrid'; // Import the new grid
@@ -15,10 +16,11 @@ const LandingPage = () => {
   const { isDark } = useTheme();
   const { user, userRole, loading } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
-  // Redirect logged-in users to their dashboard
+  // Redirect logged-in users to their dashboard (only from landing page)
   useEffect(() => {
-    if (!loading && user) {
+    if (!loading && user && location.pathname === '/') {
       const role = userRole || 'citizen';
       if (role === 'police') {
         navigate('/police-dashboard', { replace: true });
@@ -28,10 +30,10 @@ const LandingPage = () => {
         navigate('/dashboard', { replace: true });
       }
     }
-  }, [user, userRole, loading, navigate]);
+  }, [user, userRole, loading, navigate, location.pathname]);
 
   // Show loading screen while checking auth and redirecting
-  if (loading || (user && !loading)) {
+  if (loading) {
     return (
       <div className={`min-h-screen flex items-center justify-center ${isDark ? 'bg-[#0B1120]' : 'bg-[#FFFAF0]'}`}>
         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-orange-500"></div>
