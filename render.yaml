@@ -7,3 +7,4 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.11
+##note: The above configuration is for deploying a Python web application using Render. It specifies the service type, name, runtime, build command, start command, and environment variables. Make sure to adjust the commands and environment variables according to your application's structure and requirements.
